@@ -189,15 +189,79 @@ function Poly(size::Int64, p::Float64, basis::Matrix{Float64}, neighbours::Vecto
         end
     end
 
+    holeData = Vector{Int64}()
+
     @showprogress 1 "Shuffling..." for i in 1 : size^3
         while !shuffle(tiles, adjacent, p, neighbours)
             # Keep trying shuffle until it succeeds
         end
+
+        if i % size^2 == 0
+            currentHoles = holes(tiles, neighbours)
+            push!(holeData, currentHoles)
+        end
     end
+
+    scatter((Vector(1:length(holeData)) .* size^2), holeData, title="Development of Holes Over Time", xlabel="Iterations", legend=false)
+    savefig("holes.png")
 
     prettyPrint(tiles, basis)
 
+    println(holes(tiles, neighbours))
+
     Poly(tiles)
+end
+
+"""
+Let bounds be the m-dimensional bounding box, return number of m-dimensional holes. The possibly empty pos vector describes the position of
+the m-dimensional bounding box on the d-dimensional polyform, so has dimension d-m
+"""
+function holes(tiles::Set{NTuple{d, Int64}}, neighbours::Vector{NTuple{d, Int64}})
+    bounds = boundingBox(tiles)
+    m = length(bounds)
+    
+    # Adjust bounds to include the boundary of the bounding box
+    expandedBounds = [(b.first - 1 => b.second + 1) for b in bounds]
+
+    # Generate all points within the expanded bounding box
+    ranges = [b.first : b.second for b in expandedBounds]
+    gridPoints = Set{NTuple{m, Int64}}(Iterators.product(ranges...))
+
+    # Difference set to find the points not occupied by tiles in the bounding box
+    emptyPoints = setdiff(gridPoints, tiles)
+
+    # BFS to count connected components of empty points
+    function countComponents(points)
+        visited = Set{NTuple{d, Int64}}()
+        components = 0
+        
+        while !isempty(points)
+            startPoint = pop!(points)
+            queue = Queue{NTuple{d, Int64}}()
+            enqueue!(queue, startPoint)
+            push!(visited, startPoint)
+
+            while !isempty(queue)
+                current = dequeue!(queue)
+                for neighbour in neighbours
+                    neighbourPoint = current .+ neighbour
+                    if neighbourPoint in points && !(neighbourPoint in visited)
+                        enqueue!(queue, neighbourPoint)
+                        push!(visited, neighbourPoint)
+                    end
+                end
+            end
+
+            components += 1
+            points = setdiff(points, visited)
+        end
+
+        return components
+    end
+
+    # Count the connected components in the empty points
+    numberOfHoles = countComponents(emptyPoints) - 1
+    return numberOfHoles
 end
 
 # hexagon example
