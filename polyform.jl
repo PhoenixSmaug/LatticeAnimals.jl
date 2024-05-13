@@ -49,6 +49,33 @@ function prettyPrint(tiles::Set{NTuple{d, Int64}}, basis::Matrix{Float64}, p::Fl
 end
 
 
+function prettyPrint(tiles::Set{NTuple{d, Int64}}, adjacent::Set{NTuple{d, Int64}}, basis::Matrix{Float64}, p::Float64)
+    @assert d == 2 "Only 2D-Plotting is supported"
+
+    # Transform tile coordinates using lattice basis
+    tileCoords = [basis * [tile...] for tile in tiles]
+    adjacentCoords = [basis * [adj...] for adj in adjacent]
+
+    # Extract transformed x and y coordinates for tiles
+    xCoordsTiles = [c[1] for c in tileCoords]
+    yCoordsTiles = [c[2] for c in tileCoords]
+
+    # Extract transformed x and y coordinates for adjacent
+    xCoordsAdjacent = [c[1] for c in adjacentCoords]
+    yCoordsAdjacent = [c[2] for c in adjacentCoords]
+
+    # Create the plot with tiles in blue and adjacent in red
+    pl = scatter(xCoordsTiles, yCoordsTiles, color=:blue, label="Tiles", marker=:circle, aspect_ratio=:equal)
+    scatter!(pl, xCoordsAdjacent, yCoordsAdjacent, color=:red, label="Adjacent", marker=:square)
+
+    title!(pl, "Polyform")
+    xlabel!(pl, "")
+    ylabel!(pl, "")
+
+    savefig(pl, "plots/$p-$(Dates.format(now(), "HH-MM-SS-MS"))-plot-perimeter.png")
+end
+
+
 """
 Breath-First Search to check connectivity
 """
@@ -79,8 +106,6 @@ end
 
 
 @inline function shuffle(tiles::Set{NTuple{d, Int64}}, adjacent::Set{NTuple{d, Int64}}, p::Float64, neighbours::Vector{NTuple{d, Int64}})
-    diff = 0  # circumfrence difference
-
     ranTile = rand(tiles)
     ranAdj = rand(adjacent)
 
@@ -90,9 +115,6 @@ end
 
     # Find ranTile's neighboring tiles in tiles
     ranTileNeighbours = [ranTile .+ n for n in neighbours if (ranTile .+ n in tiles)]
-
-    # add edges from neighbours of removed tile to circumfrence
-    diff += length(ranTileNeighbours)
 
     # Check for circular connectivity among the selected neighbours
     allConnected = true
@@ -106,8 +128,30 @@ end
     end
 
     if allConnected
-        # remove edges from neighbours of removed tile from circumfrence
-        diff -= length([ranAdj .+ n for n in neighbours if (ranAdj .+ n in tiles)])
+        # tiles to be removed from side perimeter
+        delPerimeter = Set{NTuple{d, Int64}}()
+
+        for neighbour in neighbours
+            neighbourTile = ranTile .+ neighbour
+            # neighbours of removed tile without any other neighbours in polyform
+            if !any(neighbourTile .+ n in tiles for n in neighbours)
+                push!(delPerimeter, neighbourTile)
+            end
+        end
+
+        # tiles to be added to the side perimeter
+        addPerimeter = Set{NTuple{d, Int64}}()
+
+        for neighbour in neighbours
+            neighbourTile = ranAdj .+ neighbour
+            # neighbours of added tile which aren't in polyform
+            if !(neighbourTile in tiles)
+                push!(addPerimeter, neighbourTile)
+            end
+        end
+
+        # difference in side perimeter
+        diff = length(addPerimeter) - length(delPerimeter)
 
         accepted = true  # accepted shuffle with probability (1 - p)^diff
         if !iszero(p)
@@ -115,27 +159,20 @@ end
         end
 
         if accepted
-            # Update adjacent set
+            # update side perimeter
             push!(adjacent, ranTile)
 
-            for neighbour in neighbours
-                neighbourTile = ranTile .+ neighbour
-                if !any(neighbourTile .+ n in tiles for n in neighbours)
-                    delete!(adjacent, neighbourTile)
-                end
+            for tile in delPerimeter
+                delete!(adjacent, tile)
             end
 
             delete!(adjacent, ranAdj)
 
-            for neighbour in neighbours
-                neighbourTile = ranAdj .+ neighbour
-                if !(neighbourTile in tiles)
-                    push!(adjacent, neighbourTile)
-                end
+            for tile in addPerimeter
+                push!(adjacent, tile)
             end
 
             return true
-
         end
     end
 
@@ -144,6 +181,47 @@ end
     push!(tiles, ranTile)
     return false
 end
+
+
+"""
+Calculate number of holes as the number of connected components in the adjacent set minus 1. For some tesselations like the square this BFS
+needs different neighbours (all 8 vertex adjacent) then for the polyform connectivity.
+"""
+function holes(adjacent::Set{NTuple{d, Int64}}, neighbours::Vector{NTuple{d, Int64}})
+    # BFS to count connected components of empty points
+    function countComponents(points)
+        visited = Set{NTuple{d, Int64}}()
+        components = 0
+        
+        while !isempty(points)
+            startPoint = pop!(points)
+            queue = Queue{NTuple{d, Int64}}()
+            enqueue!(queue, startPoint)
+            push!(visited, startPoint)
+
+            while !isempty(queue)
+                current = dequeue!(queue)
+                for neighbour in neighbours
+                    neighbourPoint = current .+ neighbour
+                    if neighbourPoint in points && !(neighbourPoint in visited)
+                        enqueue!(queue, neighbourPoint)
+                        push!(visited, neighbourPoint)
+                    end
+                end
+            end
+
+            components += 1
+            points = setdiff(points, visited)
+        end
+
+        return components
+    end
+
+    # Count the connected components in the empty points
+    numberOfHoles = countComponents(adjacent) - 1
+    return numberOfHoles
+end
+
 
 """
 Generate polyform. Neighbours should be sorted such that they are circular to improve performance of connectivity check
@@ -191,7 +269,7 @@ function Poly(n::Int64, p::Float64, basis::Matrix{Float64}, neighbours::Vector{N
 
     prettyPrint(tiles, basis, p)
 
-    #println(holes(tiles, neighbours))
+    println(holes(adjacent, neighboursOutside))
 
     open("plots/$p-$(Dates.format(now(), "HH-MM-SS-MS"))-data.txt", "w") do file
         write(file, repr(Poly(tiles)))
@@ -201,47 +279,17 @@ function Poly(n::Int64, p::Float64, basis::Matrix{Float64}, neighbours::Vector{N
 end
 
 
-"""
-Calculate number of holes as the number of connected components in the adjacent set minus 1. For some tesselations like the square this BFS
-needs different neighbours (all 8 vertex adjacent) then for the polyform connectivity.
-"""
-function holes(adjacent::Set{NTuple{d, Int64}}, neighbours::Vector{NTuple{d, Int64}})
-    # BFS to count connected components of empty points
-    function countComponents(points)
-        visited = Set{NTuple{d, Int64}}()
-        components = 0
-        
-        while !isempty(points)
-            startPoint = pop!(points)
-            queue = Queue{NTuple{d, Int64}}()
-            enqueue!(queue, startPoint)
-            push!(visited, startPoint)
-
-            while !isempty(queue)
-                current = dequeue!(queue)
-                for neighbour in neighbours
-                    neighbourPoint = current .+ neighbour
-                    if neighbourPoint in points && !(neighbourPoint in visited)
-                        enqueue!(queue, neighbourPoint)
-                        push!(visited, neighbourPoint)
-                    end
-                end
-            end
-
-            components += 1
-            points = setdiff(points, visited)
-        end
-
-        return components
-    end
-
-    # Count the connected components in the empty points
-    numberOfHoles = countComponents(adjacent) - 1
-    return numberOfHoles
+function Polyomino(n::Int64, p::Float64)
+    Poly(n, p, [1. 0.; 0. 1.], [(1, 0), (0, -1), (-1, 0), (0, 1)], [(1, 0), (0, -1), (-1, 0), (0, 1), (1, -1), (-1, -1), (-1, 1), (1, 1)])
 end
+
+function Polyhex(n::Int64, p::Float64)
+    Poly(n, p, [1. -1/2; 0. sqrt(3)/2], [(1, 0), (0, -1), (-1, -1), (-1, 0), (0, 1), (1, 1)])
+end
+
 
 if length(ARGS) == 1
     while true
-        Poly(1000, parse(Float64, ARGS[1]), [1 -1/2; 0 sqrt(3)/2], [(1, 0), (0, -1), (-1, -1), (-1, 0), (0, 1), (1, 1)])
+        Polyhex(1000, parse(Float64, ARGS[1]))
     end
 end
