@@ -5,7 +5,7 @@ using ProgressMeter
 
 const d = 2  # number of dimensions
 
-struct Poly
+mutable struct Poly
     tiles::Set{NTuple{d, Int64}}
 end
 
@@ -32,7 +32,7 @@ end
 """
 Plot 2D polyforms
 """
-function prettyPrint(tiles::Set{NTuple{d, Int64}}, basis::Matrix{Float64})
+function prettyPrint(tiles::Set{NTuple{d, Int64}}, basis::Matrix{Float64}, p::Float64)
     @assert d == 2 "Only 2D-Plotting is supported"
 
     # Transform tile coordinates using lattice basis
@@ -45,35 +45,7 @@ function prettyPrint(tiles::Set{NTuple{d, Int64}}, basis::Matrix{Float64})
     # Create the plot
     pl = scatter(xCoords, yCoords, title="Polyform", legend=false, xlabel="", ylabel="", aspect_ratio=:equal)
 
-    timestamp = Dates.format(now(), "HH-MM-SS-MS")
-    savefig(pl, "plots/plot-$(timestamp).png")
-end
-
-function prettyPrint(tiles::Set{NTuple{d, Int64}}, adjacent::Set{NTuple{d, Int64}}, basis::Matrix{Float64})
-    @assert d == 2 "Only 2D-Plotting is supported"
-
-    # Transform tile coordinates using lattice basis
-    tileCoords = [basis * [tile...] for tile in tiles]
-    adjacentCoords = [basis * [adj...] for adj in adjacent]
-
-    # Extract transformed x and y coordinates for tiles
-    xCoordsTiles = [c[1] for c in tileCoords]
-    yCoordsTiles = [c[2] for c in tileCoords]
-
-    # Extract transformed x and y coordinates for adjacent
-    xCoordsAdjacent = [c[1] for c in adjacentCoords]
-    yCoordsAdjacent = [c[2] for c in adjacentCoords]
-
-    # Create the plot with tiles in blue and adjacent in red
-    pl = scatter(xCoordsTiles, yCoordsTiles, color=:blue, label="Tiles", marker=:circle, aspect_ratio=:equal)
-    scatter!(pl, xCoordsAdjacent, yCoordsAdjacent, color=:red, label="Adjacent", marker=:square)
-
-    title!(pl, "Polyform")
-    xlabel!(pl, "")
-    ylabel!(pl, "")
-
-    timestamp = Dates.format(now(), "HH-MM-SS-MS")
-    savefig(pl, "plots/plot-$(timestamp).png")
+    savefig(pl, "plots/$p-$(Dates.format(now(), "HH-MM-SS-MS"))-plot.png")
 end
 
 
@@ -173,10 +145,22 @@ end
     return false
 end
 
+"""
+Generate polyform. Neighbours should be sorted such that they are circular to improve performance of connectivity check
+"""
+function Poly(n::Int64, p::Float64, basis::Matrix{Float64}, neighbours::Vector{NTuple{d, Int64}})
+    Poly(n, p, basis, neighbours, neighbours)
+end
 
-function Poly(size::Int64, p::Float64, basis::Matrix{Float64}, neighbours::Vector{NTuple{d, Int64}})
-    # Initialize tiles linearly along the first dimension from 1 to size
-    tiles = Set([(i, fill(0, d-1)...) for i in 1:size])
+"""
+Generate polyform and plot holes
+"""
+function Poly(n::Int64, p::Float64, basis::Matrix{Float64}, neighbours::Vector{NTuple{d, Int64}}, neighboursOutside::Vector{NTuple{d, Int64}})
+    # Initialize tiles as line
+    tiles = Set{NTuple{d, Int64}}()
+    for i in 0 : n - 1
+        push!(tiles, Tuple(fill(0, d)) .+ i .* neighbours[1])
+    end
 
     # Determine initial adjacent
     adjacent = Set{NTuple{d, Int64}}()
@@ -191,45 +175,37 @@ function Poly(size::Int64, p::Float64, basis::Matrix{Float64}, neighbours::Vecto
 
     holeData = Vector{Int64}()
 
-    @showprogress 1 "Shuffling..." for i in 1 : size^3
+    @showprogress 1 "Shuffling..." for i in 1 : floor(Int, n^2 * log(n))
         while !shuffle(tiles, adjacent, p, neighbours)
             # Keep trying shuffle until it succeeds
         end
 
-        if i % size^2 == 0
-            currentHoles = holes(tiles, neighbours)
+        if i % n == 0
+            currentHoles = holes(adjacent, neighboursOutside)
             push!(holeData, currentHoles)
         end
     end
 
-    scatter((Vector(1:length(holeData)) .* size^2), holeData, title="Development of Holes Over Time", xlabel="Iterations", legend=false)
-    savefig("holes.png")
+    scatter((Vector(1:length(holeData)) .* n^2), holeData, title="Development of Holes Over Time", xlabel="Iterations", legend=false)
+    savefig("plots/$p-$(Dates.format(now(), "HH-MM-SS-MS"))-holes.png")
 
-    prettyPrint(tiles, basis)
+    prettyPrint(tiles, basis, p)
 
-    println(holes(tiles, neighbours))
+    #println(holes(tiles, neighbours))
+
+    open("plots/$p-$(Dates.format(now(), "HH-MM-SS-MS"))-data.txt", "w") do file
+        write(file, repr(Poly(tiles)))
+    end
 
     Poly(tiles)
 end
 
+
 """
-Let bounds be the m-dimensional bounding box, return number of m-dimensional holes. The possibly empty pos vector describes the position of
-the m-dimensional bounding box on the d-dimensional polyform, so has dimension d-m
+Calculate number of holes as the number of connected components in the adjacent set minus 1. For some tesselations like the square this BFS
+needs different neighbours (all 8 vertex adjacent) then for the polyform connectivity.
 """
-function holes(tiles::Set{NTuple{d, Int64}}, neighbours::Vector{NTuple{d, Int64}})
-    bounds = boundingBox(tiles)
-    m = length(bounds)
-    
-    # Adjust bounds to include the boundary of the bounding box
-    expandedBounds = [(b.first - 1 => b.second + 1) for b in bounds]
-
-    # Generate all points within the expanded bounding box
-    ranges = [b.first : b.second for b in expandedBounds]
-    gridPoints = Set{NTuple{m, Int64}}(Iterators.product(ranges...))
-
-    # Difference set to find the points not occupied by tiles in the bounding box
-    emptyPoints = setdiff(gridPoints, tiles)
-
+function holes(adjacent::Set{NTuple{d, Int64}}, neighbours::Vector{NTuple{d, Int64}})
     # BFS to count connected components of empty points
     function countComponents(points)
         visited = Set{NTuple{d, Int64}}()
@@ -260,9 +236,12 @@ function holes(tiles::Set{NTuple{d, Int64}}, neighbours::Vector{NTuple{d, Int64}
     end
 
     # Count the connected components in the empty points
-    numberOfHoles = countComponents(emptyPoints) - 1
+    numberOfHoles = countComponents(adjacent) - 1
     return numberOfHoles
 end
 
-# hexagon example
-# p = Poly(30, 0.6, [1 -1/2; 0 sqrt(3)/2], [(1, 0), (0, 1), (-1, 0), (0, -1), (1, 1), (-1, -1)])
+if length(ARGS) == 1
+    while true
+        Poly(1000, parse(Float64, ARGS[1]), [1 -1/2; 0 sqrt(3)/2], [(1, 0), (0, -1), (-1, -1), (-1, 0), (0, 1), (1, 1)])
+    end
+end
