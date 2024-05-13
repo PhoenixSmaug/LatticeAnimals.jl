@@ -290,6 +290,7 @@ end
 
 if length(ARGS) == 1
     while true
-        Polyhex(1000, parse(Float64, ARGS[1]))
+        #Polyhex(1000, parse(Float64, ARGS[1]))
+        Polyomino(900, parse(Float64, ARGS[1]))
     end
 end
