@@ -272,7 +272,7 @@ function Poly(n::Int64, p::Float64, basis::Matrix{Float64}, neighbours::Vector{N
 
     holeData = Vector{Int64}()
 
-    @showprogress 1 "Shuffling..." for i in 1 : floor(Int, n^2 * log(n))
+    @showprogress 1 "Shuffling..." for i in 1 : 2 * n^2
         while !shuffle(tiles, perimeter, p, neighbours)
             # Keep trying shuffle until it succeeds
         end
@@ -310,7 +310,7 @@ end
 
 if length(ARGS) == 1
     while true
-        #Polyhex(1000, parse(Float64, ARGS[1]))
-        Polyomino(900, parse(Float64, ARGS[1]))
+        Polyhex(10000, parse(Float64, ARGS[1]))
+        #Polyomino(10000, parse(Float64, ARGS[1]))
     end
 end
