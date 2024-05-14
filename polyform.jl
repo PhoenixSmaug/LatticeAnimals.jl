@@ -49,22 +49,22 @@ function prettyPrint(tiles::Set{NTuple{d, Int64}}, basis::Matrix{Float64}, p::Fl
 end
 
 
-function prettyPrint(tiles::Set{NTuple{d, Int64}}, adjacent::Set{NTuple{d, Int64}}, basis::Matrix{Float64}, p::Float64)
+function prettyPrint(tiles::Set{NTuple{d, Int64}}, perimeter::Set{NTuple{d, Int64}}, basis::Matrix{Float64}, p::Float64)
     @assert d == 2 "Only 2D-Plotting is supported"
 
     # Transform tile coordinates using lattice basis
     tileCoords = [basis * [tile...] for tile in tiles]
-    adjacentCoords = [basis * [adj...] for adj in adjacent]
+    perimeterCoords = [basis * [adj...] for adj in perimeter]
 
     # Extract transformed x and y coordinates for tiles
     xCoordsTiles = [c[1] for c in tileCoords]
     yCoordsTiles = [c[2] for c in tileCoords]
 
-    # Extract transformed x and y coordinates for adjacent
-    xCoordsAdjacent = [c[1] for c in adjacentCoords]
-    yCoordsAdjacent = [c[2] for c in adjacentCoords]
+    # Extract transformed x and y coordinates for perimeter
+    xCoordsAdjacent = [c[1] for c in perimeterCoords]
+    yCoordsAdjacent = [c[2] for c in perimeterCoords]
 
-    # Create the plot with tiles in blue and adjacent in red
+    # Create the plot with tiles in blue and perimeter in red
     pl = scatter(xCoordsTiles, yCoordsTiles, color=:blue, label="Tiles", marker=:circle, aspect_ratio=:equal)
     scatter!(pl, xCoordsAdjacent, yCoordsAdjacent, color=:red, label="Adjacent", marker=:square)
 
@@ -105,22 +105,61 @@ Breath-First Search to check connectivity
 end
 
 
-@inline function shuffle(tiles::Set{NTuple{d, Int64}}, adjacent::Set{NTuple{d, Int64}}, p::Float64, neighbours::Vector{NTuple{d, Int64}})
-    ranTile = rand(tiles)
-    ranAdj = rand(adjacent)
+@inline function shuffle(tiles::Set{NTuple{d, Int64}}, perimeter::Set{NTuple{d, Int64}}, p::Float64, neighbours::Vector{NTuple{d, Int64}})
+    tA = length(perimeter)
 
-    # Move random tile to new position
-    delete!(tiles, ranTile)
-    push!(tiles, ranAdj)
+    # Step 1: Uniformly at random, select a cell, x, in A
 
-    # Find ranTile's neighboring tiles in tiles
-    ranTileNeighbours = [ranTile .+ n for n in neighbours if (ranTile .+ n in tiles)]
+    x = rand(tiles)
+    delete!(tiles, x)
+    push!(perimeter, x)  # removed cell will always become part of side parameter
+
+    delPerimeter = Set{NTuple{d, Int64}}() # tiles to be removed from side perimeter
+
+    for neighbour in neighbours
+        neighbourTile = x .+ neighbour
+        # neighbours of removed tile without any other neighbours in polyform
+        if !any(neighbourTile .+ n in tiles for n in neighbours) && (neighbourTile in perimeter)
+            push!(delPerimeter, neighbourTile)
+        end
+    end
+
+    for tile in delPerimeter
+        delete!(perimeter, tile)
+    end
+
+    # Step 2: Uniformly at random, select a site, y, on the site perimeter of A \ {x}
+
+    y = rand(perimeter)
+    delete!(perimeter, y)
+    push!(tiles, y)
+
+    # tiles to be added to the side perimeter
+    addPerimeter = Set{NTuple{d, Int64}}()
+
+    for neighbour in neighbours
+        neighbourTile = y .+ neighbour
+        # neighbours of added tile which aren't in polyform and not already in perimeter
+        if !(neighbourTile in tiles) && !(neighbourTile in perimeter)
+            push!(addPerimeter, neighbourTile)
+        end
+    end
+
+    for tile in addPerimeter
+        push!(perimeter, tile)
+    end
+
+    # Step 3: If B = (A \ {x}) U {y} is a polyform, then accept it as the next polyform with probability min(1, (1-p)^(t_B-t_A)), where
+    # t_A and t_B are the site perimeters of A and B, respectively. Otherwise, keep the current polynomino A.
+
+    # Find x's neighboring tiles in tiles
+    xNeighbours = [x .+ n for n in neighbours if (x .+ n in tiles)]
 
     # Check for circular connectivity among the selected neighbours
     allConnected = true
-    if length(ranTileNeighbours) > 1
-        for i in 1:length(ranTileNeighbours)
-            if !bfs(tiles, ranTileNeighbours[i], ranTileNeighbours[i % length(ranTileNeighbours) + 1], neighbours)
+    if length(xNeighbours) > 1
+        for i in 1:length(xNeighbours)
+            if !bfs(tiles, xNeighbours[i], xNeighbours[i % length(xNeighbours) + 1], neighbours)
                 allConnected = false
                 break
             end
@@ -128,30 +167,8 @@ end
     end
 
     if allConnected
-        # tiles to be removed from side perimeter
-        delPerimeter = Set{NTuple{d, Int64}}()
-
-        for neighbour in neighbours
-            neighbourTile = ranTile .+ neighbour
-            # neighbours of removed tile without any other neighbours in polyform
-            if !any(neighbourTile .+ n in tiles for n in neighbours)
-                push!(delPerimeter, neighbourTile)
-            end
-        end
-
-        # tiles to be added to the side perimeter
-        addPerimeter = Set{NTuple{d, Int64}}()
-
-        for neighbour in neighbours
-            neighbourTile = ranAdj .+ neighbour
-            # neighbours of added tile which aren't in polyform
-            if !(neighbourTile in tiles)
-                push!(addPerimeter, neighbourTile)
-            end
-        end
-
         # difference in side perimeter
-        diff = length(addPerimeter) - length(delPerimeter)
+        diff = length(perimeter) - tA
 
         accepted = true  # accepted shuffle with probability (1 - p)^diff
         if !iszero(p)
@@ -159,35 +176,37 @@ end
         end
 
         if accepted
-            # update side perimeter
-            push!(adjacent, ranTile)
-
-            for tile in delPerimeter
-                delete!(adjacent, tile)
-            end
-
-            delete!(adjacent, ranAdj)
-
-            for tile in addPerimeter
-                push!(adjacent, tile)
-            end
-
             return true
         end
     end
 
-    # Undo move if not connected or not accepted
-    delete!(tiles, ranAdj)
-    push!(tiles, ranTile)
+    # Undo all moves if not connected or not accepted
+    
+    # Revert to A \ {x}
+    delete!(tiles, y)
+
+    for tile in addPerimeter
+        delete!(perimeter, tile)
+    end
+    push!(perimeter, y)
+
+    # Revert to A
+    push!(tiles, x)
+
+    for tile in delPerimeter
+        push!(perimeter, tile)
+    end
+    delete!(perimeter, x)
+
     return false
 end
 
 
 """
-Calculate number of holes as the number of connected components in the adjacent set minus 1. For some tesselations like the square this BFS
-needs different neighbours (all 8 vertex adjacent) then for the polyform connectivity.
+Calculate number of holes as the number of connected components in the perimeter set minus 1. For some tesselations like the square this BFS
+needs different neighbours (all 8 vertex perimeter) then for the polyform connectivity.
 """
-function holes(adjacent::Set{NTuple{d, Int64}}, neighbours::Vector{NTuple{d, Int64}})
+function holes(perimeter::Set{NTuple{d, Int64}}, neighbours::Vector{NTuple{d, Int64}})
     # BFS to count connected components of empty points
     function countComponents(points)
         visited = Set{NTuple{d, Int64}}()
@@ -218,7 +237,7 @@ function holes(adjacent::Set{NTuple{d, Int64}}, neighbours::Vector{NTuple{d, Int
     end
 
     # Count the connected components in the empty points
-    numberOfHoles = countComponents(adjacent) - 1
+    numberOfHoles = countComponents(copy(perimeter)) - 1
     return numberOfHoles
 end
 
@@ -240,13 +259,13 @@ function Poly(n::Int64, p::Float64, basis::Matrix{Float64}, neighbours::Vector{N
         push!(tiles, Tuple(fill(0, d)) .+ i .* neighbours[1])
     end
 
-    # Determine initial adjacent
-    adjacent = Set{NTuple{d, Int64}}()
+    # Determine initial perimeter
+    perimeter = Set{NTuple{d, Int64}}()
     for tile in tiles
         for neighbour in neighbours
             neighbour_tile = tile .+ neighbour
             if !(neighbour_tile in tiles)
-                push!(adjacent, neighbour_tile)
+                push!(perimeter, neighbour_tile)
             end
         end
     end
@@ -254,12 +273,12 @@ function Poly(n::Int64, p::Float64, basis::Matrix{Float64}, neighbours::Vector{N
     holeData = Vector{Int64}()
 
     @showprogress 1 "Shuffling..." for i in 1 : floor(Int, n^2 * log(n))
-        while !shuffle(tiles, adjacent, p, neighbours)
+        while !shuffle(tiles, perimeter, p, neighbours)
             # Keep trying shuffle until it succeeds
         end
 
         if i % n == 0
-            currentHoles = holes(adjacent, neighboursOutside)
+            currentHoles = holes(perimeter, neighboursOutside)
             push!(holeData, currentHoles)
         end
     end
@@ -268,8 +287,9 @@ function Poly(n::Int64, p::Float64, basis::Matrix{Float64}, neighbours::Vector{N
     savefig("plots/$p-$(Dates.format(now(), "HH-MM-SS-MS"))-holes.png")
 
     prettyPrint(tiles, basis, p)
+    #prettyPrint(tiles, perimeter, basis, p)
 
-    println(holes(adjacent, neighboursOutside))
+    println(holes(perimeter, neighboursOutside))
 
     open("plots/$p-$(Dates.format(now(), "HH-MM-SS-MS"))-data.txt", "w") do file
         write(file, repr(Poly(tiles)))
