@@ -66,7 +66,7 @@ function prettyPrint(tiles::Set{NTuple{d, Int64}}, perimeter::Set{NTuple{d, Int6
 
     # Create the plot with tiles in blue and perimeter in red
     pl = scatter(xCoordsTiles, yCoordsTiles, color=:blue, label="Tiles", marker=:circle, aspect_ratio=:equal)
-    scatter!(pl, xCoordsAdjacent, yCoordsAdjacent, color=:red, label="Adjacent", marker=:square)
+    scatter!(pl, xCoordsAdjacent, yCoordsAdjacent, color=:red, label="Perimeter", marker=:square)
 
     title!(pl, "Polyform")
     xlabel!(pl, "")
@@ -114,7 +114,7 @@ end
     delete!(tiles, x)
     push!(perimeter, x)  # removed cell will always become part of side parameter
 
-    delPerimeter = Set{NTuple{d, Int64}}() # tiles to be removed from side perimeter
+    delPerimeter = Vector{NTuple{d, Int64}}() # tiles to be removed from side perimeter
 
     for neighbour in neighbours
         neighbourTile = x .+ neighbour
@@ -135,7 +135,7 @@ end
     push!(tiles, y)
 
     # tiles to be added to the side perimeter
-    addPerimeter = Set{NTuple{d, Int64}}()
+    addPerimeter = Vector{NTuple{d, Int64}}()
 
     for neighbour in neighbours
         neighbourTile = y .+ neighbour
@@ -286,8 +286,8 @@ function Poly(n::Int64, p::Float64, basis::Matrix{Float64}, neighbours::Vector{N
     scatter((Vector(1:length(holeData)) .* n^2), holeData, title="Development of Holes Over Time", xlabel="Iterations", legend=false)
     savefig("plots/$p-$(Dates.format(now(), "HH-MM-SS-MS"))-holes.png")
 
-    prettyPrint(tiles, basis, p)
-    #prettyPrint(tiles, perimeter, basis, p)
+    #prettyPrint(tiles, basis, p)
+    prettyPrint(tiles, perimeter, basis, p)
 
     println(holes(perimeter, neighboursOutside))
 
