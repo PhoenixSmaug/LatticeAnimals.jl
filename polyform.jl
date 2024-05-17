@@ -28,6 +28,10 @@ function boundingBox(tiles::Set{NTuple{d, Int64}})
     return [(minVec[i] => maxVec[i]) for i in 1:d]
 end
 
+function boundingBox(p::Poly)
+    boundingBox(p.tiles)
+end
+
 
 """
 Plot 2D polyforms
@@ -272,7 +276,7 @@ function Poly(n::Int64, p::Float64, basis::Matrix{Float64}, neighbours::Vector{N
 
     holeData = Vector{Int64}()
 
-    @showprogress 1 "Shuffling..." for i in 1 : 2 * n^2
+    @showprogress 1 "Shuffling..." for i in 1 : floor(Int, n^2 * log(n))
         while !shuffle(tiles, perimeter, p, neighbours)
             # Keep trying shuffle until it succeeds
         end
@@ -286,10 +290,10 @@ function Poly(n::Int64, p::Float64, basis::Matrix{Float64}, neighbours::Vector{N
     scatter((Vector(1:length(holeData)) .* n^2), holeData, title="Development of Holes Over Time", xlabel="Iterations", legend=false)
     savefig("plots/$p-$(Dates.format(now(), "HH-MM-SS-MS"))-holes.png")
 
-    #prettyPrint(tiles, basis, p)
-    prettyPrint(tiles, perimeter, basis, p)
+    prettyPrint(tiles, basis, p)
+    #prettyPrint(tiles, perimeter, basis, p)
 
-    println(holes(perimeter, neighboursOutside))
+    #println(holes(perimeter, neighboursOutside))
 
     open("plots/$p-$(Dates.format(now(), "HH-MM-SS-MS"))-data.txt", "w") do file
         write(file, repr(Poly(tiles)))
