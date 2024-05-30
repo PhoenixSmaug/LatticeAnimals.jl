@@ -7,6 +7,7 @@ const d = 2  # number of dimensions
 
 mutable struct Poly
     tiles::Set{NTuple{d, Int64}}
+    holes::Int64
 end
 
 
@@ -207,10 +208,24 @@ end
 
 
 """
-Calculate number of holes as the number of connected components in the perimeter set minus 1. For some tesselations like the square this BFS
-needs different neighbours (all 8 vertex perimeter) then for the polyform connectivity.
+Calculate number of holes using BFS on the boundary set
 """
-function holes(perimeter::Set{NTuple{d, Int64}}, neighbours::Vector{NTuple{d, Int64}})
+function holes(tiles::Set{NTuple{d, Int64}}, neighbours::Vector{NTuple{d, Int64}})
+    bounds = boundingBox(tiles)
+    m = length(bounds)
+
+    # Adjust bounds to include the boundary of the bounding box
+    expandedBounds = [(b.first - 1 => b.second + 1) for b in bounds]
+
+    # Generate all points within the expanded bounding box
+    ranges = [b.first : b.second for b in expandedBounds]
+    gridPoints = Set{NTuple{m, Int64}}(Iterators.product(ranges...))
+
+    # Difference set to find the points not occupied by tiles in the bounding box
+    emptyPoints = setdiff(gridPoints, tiles)
+
+    println(emptyPoints)
+
     # BFS to count connected components of empty points
     function countComponents(points)
         visited = Set{NTuple{d, Int64}}()
@@ -241,7 +256,7 @@ function holes(perimeter::Set{NTuple{d, Int64}}, neighbours::Vector{NTuple{d, In
     end
 
     # Count the connected components in the empty points
-    numberOfHoles = countComponents(copy(perimeter)) - 1
+    numberOfHoles = countComponents(emptyPoints) - 1
     return numberOfHoles
 end
 
@@ -250,13 +265,6 @@ end
 Generate polyform. Neighbours should be sorted such that they are circular to improve performance of connectivity check
 """
 function Poly(n::Int64, p::Float64, basis::Matrix{Float64}, neighbours::Vector{NTuple{d, Int64}})
-    Poly(n, p, basis, neighbours, neighbours)
-end
-
-"""
-Generate polyform and plot holes
-"""
-function Poly(n::Int64, p::Float64, basis::Matrix{Float64}, neighbours::Vector{NTuple{d, Int64}}, neighboursOutside::Vector{NTuple{d, Int64}})
     # Initialize tiles as line
     tiles = Set{NTuple{d, Int64}}()
     for i in 0 : n - 1
@@ -276,45 +284,97 @@ function Poly(n::Int64, p::Float64, basis::Matrix{Float64}, neighbours::Vector{N
 
     holeData = Vector{Int64}()
 
-    @showprogress 1 "Shuffling..." for i in 1 : floor(Int, n^2 * log(n))
+    @showprogress 1 "Shuffling..." for i in 1 : floor(Int, 2 * n^2)
         while !shuffle(tiles, perimeter, p, neighbours)
             # Keep trying shuffle until it succeeds
         end
 
         if i % n == 0
-            currentHoles = holes(perimeter, neighboursOutside)
+            currentHoles = holes(tiles, neighbours)
             push!(holeData, currentHoles)
         end
     end
 
-    scatter((Vector(1:length(holeData)) .* n^2), holeData, title="Development of Holes Over Time", xlabel="Iterations", legend=false)
-    savefig("plots/$p-$(Dates.format(now(), "HH-MM-SS-MS"))-holes.png")
+    doPlot = false
 
-    prettyPrint(tiles, basis, p)
-    #prettyPrint(tiles, perimeter, basis, p)
+    if doPlot
+        scatter((Vector(1:length(holeData)) .* n^2), holeData, title="Development of Holes Over Time", xlabel="Iterations", legend=false)
+        savefig("plots/$p-$(Dates.format(now(), "HH-MM-SS-MS"))-holes.png")
 
-    #println(holes(perimeter, neighboursOutside))
+        prettyPrint(tiles, basis, p)
+        #prettyPrint(tiles, perimeter, basis, p)
 
-    open("plots/$p-$(Dates.format(now(), "HH-MM-SS-MS"))-data.txt", "w") do file
-        write(file, repr(Poly(tiles)))
+        open("plots/$p-$(Dates.format(now(), "HH-MM-SS-MS"))-data.txt", "w") do file
+            write(file, repr(Poly(tiles, holes(tiles, neighbours))))
+        end
     end
 
-    Poly(tiles)
+    Poly(tiles, holes(tiles, neighbours))
 end
 
 
 function Polyomino(n::Int64, p::Float64)
-    Poly(n, p, [1. 0.; 0. 1.], [(1, 0), (0, -1), (-1, 0), (0, 1)], [(1, 0), (0, -1), (-1, 0), (0, 1), (1, -1), (-1, -1), (-1, 1), (1, 1)])
+    Poly(n, p, [1. 0.; 0. 1.], [(1, 0), (0, -1), (-1, 0), (0, 1)])
 end
 
 function Polyhex(n::Int64, p::Float64)
     Poly(n, p, [1. -1/2; 0. sqrt(3)/2], [(1, 0), (0, -1), (-1, -1), (-1, 0), (0, 1), (1, 1)])
 end
 
+function avgHolesSq(p, n, r)
+    println(p)
+
+    avg = 0.
+    for _ in 1 : r
+        poly = Polyomino(n, p)
+        avg += poly.holes
+    end
+    
+    return avg / r
+end
+
+function avgHolesHex(p, n, r)
+    println(p)
+
+    avg = 0.
+    for _ in 1 : r
+        poly = Polyhex(n, p)
+        avg += poly.holes
+    end
+    
+    return avg / r
+end
+
+
+function plotHolesSq(n)
+    r = 10  # number of runs
+
+    x = 0.2 : 0.1 : 0.9
+    y = [avgHolesSq(p, n, r) for p in x]
+
+    plot(x, y, title="Polyomino n = $n", xlabel="p", ylabel="Holes", linewidth=2, marker=:circle, legend=false)
+    savefig("sq-$n.png")
+end
+
+
+function plotHolesHex(n)
+    r = 10  # number of runs
+
+    x = 0.2 : 0.03 : 0.9
+    y = [avgHolesHex(p, n, r) for p in x]
+
+    plot(x, y, title="Polyhex n = $n", xlabel="p", ylabel="Holes", linewidth=2, marker=:circle, legend=false)
+    savefig("hex-$n.png")
+end
+
+
 
 if length(ARGS) == 1
     while true
-        Polyhex(10000, parse(Float64, ARGS[1]))
-        #Polyomino(10000, parse(Float64, ARGS[1]))
+        #Polyhex(1000, parse(Float64, ARGS[1]))
+        #Polyomino(1000, parse(Float64, ARGS[1]))
     end
 end
+
+#plotHolesSq(400)
+# plotHolesHex(400)
