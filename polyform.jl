@@ -57,7 +57,6 @@ end
 
 function prettyPrint(tiles::Set{NTuple{d, Int64}}, perimeter::Set{NTuple{d, Int64}}, basis::Matrix{Float64}, p::Float64)
     @assert d == 2 "Only 2D-Plotting is supported"
-    @assert isempty(intersect(tiles, perimeter)) "Tiles and perimeter not disjoint"
 
     # Transform tile coordinates using lattice basis
     tileCoords = [basis * [tile...] for tile in tiles]
@@ -113,10 +112,6 @@ end
 
 
 @inline function shuffle(tiles::Set{NTuple{d, Int64}}, perimeter::Set{NTuple{d, Int64}}, p::Float64, neighbours::Vector{NTuple{d, Int64}})
-    @assert isempty(intersect(tiles, perimeter)) "Tiles and perimeter not disjoint"
-    tilesOld = deepcopy(tiles)
-    perimeterOld = deepcopy(perimeter)
-
     tA = length(perimeter)
 
     # Step 1: Uniformly at random, select a cell, x, in A
@@ -142,17 +137,6 @@ end
     # Step 2: Uniformly at random, select a site, y, on the site perimeter of A \ {x}
 
     y = rand(perimeter)
-
-    # replicate error from C++ code
-    while true
-        ran = rand(tiles)
-        y = ran .+ rand(neighbours)
-
-        if !(y in tiles)
-            break
-        end
-    end
-
     delete!(perimeter, y)
     push!(tiles, y)
 
@@ -219,9 +203,6 @@ end
         push!(perimeter, tile)
     end
     delete!(perimeter, x)
-
-    @assert tiles == tilesOld "Tiles not correctly reset"
-    @assert perimeter == perimeterOld "Tiles not correctly reset"
 
     return false
 end
@@ -302,7 +283,7 @@ function Poly(n::Int64, p::Float64, basis::Matrix{Float64}, neighbours::Vector{N
 
     holeData = Vector{Int64}()
 
-    @showprogress 1 "Shuffling..." for i in 1 : floor(Int, 2 * n^2)
+    @showprogress 1 "Shuffling..." for i in 1 : floor(Int, 20 * n^2)
         while !shuffle(tiles, perimeter, p, neighbours)
             # Keep trying shuffle until it succeeds
         end
@@ -377,9 +358,9 @@ end
 
 
 function plotHolesSq(n)
-    r = 10  # number of runs
+    r = 30  # number of runs
 
-    x = 0.4 : 0.1 : 0.8
+    x = 0.3 : 0.03 : 0.9
     y = [avgHolesSq(p, n, r) for p in x]
 
     plot(x, y, title="Polyomino n = $n", xlabel="p", ylabel="Holes", linewidth=2, marker=:circle, legend=false)
@@ -388,9 +369,9 @@ end
 
 
 function plotHolesHex(n)
-    r = 10  # number of runs
+    r = 30  # number of runs
 
-    x = 0.2 : 0.03 : 0.9
+    x = 0.3 : 0.03 : 0.9
     y = [avgHolesHex(p, n, r) for p in x]
 
     plot(x, y, title="Polyhex n = $n", xlabel="p", ylabel="Holes", linewidth=2, marker=:circle, legend=false)
@@ -399,7 +380,7 @@ end
 
 
 function plotPeriSq(n)
-    r = 10  # number of runs
+    r = 20  # number of runs
 
     x = 0.0 : 0.1 : 0.9
     y = [avgPeriSq(p, n, r) for p in x]
@@ -417,7 +398,7 @@ if length(ARGS) == 1
     end
 end
 
-plotHolesSq(500)
+plotPeriSq(100)
 
 #plotHolesSq(400)
 # plotHolesHex(400)
