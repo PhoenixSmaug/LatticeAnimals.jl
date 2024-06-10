@@ -12,4 +12,5 @@ ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
 [compat]
 DataStructures = "0.18"
 Plots = "1.40"
+Preferences = "1.4"
 ProgressMeter = "1.10"

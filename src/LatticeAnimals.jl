@@ -2,8 +2,8 @@ module LatticeAnimals
 
 using Plots
 using DataStructures
-using ProgressMeter
 using Preferences
+using ProgressMeter
 
 export setDimension, Poly, Polyomino, Polyhex, polyPlot
 
