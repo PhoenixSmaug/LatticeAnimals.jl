@@ -5,6 +5,17 @@ using ProgressMeter
 
 const d = 2  # number of dimensions
 
+
+"""
+    Poly(tiles, perimeter, holes)
+
+Struct to represent a d-dimensional polyform (Animal lattice).
+
+# Arguments
+    * `tiles`: Lattice points which are part of the polyform
+    * `perimeter`: Lattice points which are in the side perimeter of the polyform, so are neighboring a tile in the polyform
+    * `holes`: Number of d-dimensional holes
+"""
 mutable struct Poly
     tiles::Set{NTuple{d, Int64}}
     perimeter::Set{NTuple{d, Int64}}
@@ -13,7 +24,91 @@ end
 
 
 """
-Return d-dimensional bounding box
+    Poly(n, p, basis, neighbours; doPlot)
+
+Generate a random d-dimensional polyform of size n from the percolation distribution at p using the Metropolis algorithm. neighbours
+is a list of coordinate differences to each respective neighbouring lattice point defined by the lattice and should be sorted
+clock-wise to improve performance of the connectivity checks during generation. The default mixing time is 2*n^2
+
+# Arguments
+    * `n`: Size of the polyform
+    * `p`: Percolation factor in [0, 1)
+    * `basis`: Lattice basis of the polyform
+    * `neighbours`: List of difference to the respective neighbouring tiles for the current polyform 
+    * `doPlot`: If a scatter plot visualizing the polyform should be created (only available for 2d-polyforms)
+"""
+function Poly(n::Int64, p::Float64, basis::Matrix{Float64}, neighbours::Vector{NTuple{d, Int64}}; doPlot = false)
+    # Initialize tiles as line
+    tiles = Set{NTuple{d, Int64}}()
+    for i in 0 : n - 1
+        push!(tiles, Tuple(fill(0, d)) .+ i .* neighbours[1])
+    end
+
+    # Determine initial perimeter
+    perimeter = Set{NTuple{d, Int64}}()
+    for tile in tiles
+        for neighbour in neighbours
+            neighbour_tile = tile .+ neighbour
+            if !(neighbour_tile in tiles)
+                push!(perimeter, neighbour_tile)
+            end
+        end
+    end
+
+    @showprogress 1 "Shuffling..." for _ in 1 : floor(Int, 2 * n^2)
+        while !shuffle(tiles, perimeter, p, neighbours)
+            # Keep trying shuffle until it succeeds
+        end
+    end
+
+    if doPlot
+        prettyPrint(tiles, basis, "$p-$(Dates.format(now(), "HH-MM-SS-MS"))-plot.png")
+        #prettyPrint(tiles, perimeter, basis, "$p-$(Dates.format(now(), "HH-MM-SS-MS"))-plot.png")
+    end
+
+    Poly(tiles, perimeter, holes(tiles, neighbours))
+end
+
+
+"""
+    Polyomino(n, p)
+
+Generate a random polyomino of size n from the percolation distribution at p using the Metropolis algorithm. The basis consits
+of the two unit-vectors as columns in a matrix. The four neighbours are then specified each as a linear combination of the basis
+vectors.
+
+# Arguments
+    * `n`: Size of the polyomino
+    * `p`: Percolation factor in [0, 1)
+"""
+function Polyomino(n::Int64, p::Float64)
+    Poly(n, p, [1. 0.; 0. 1.], [(1, 0), (0, -1), (-1, 0), (0, 1)])
+end
+
+
+"""
+    Polyhex(n, p)
+
+Generate a random polyhex of size n from the percolation distribution at p using the Metropolis algorithm. The basis consits
+of the first unit vector and the vector of length 1 at 120 degrees to the left. The six neighbours are then specified each as a
+linear combination of the basis vectors.
+
+# Arguments
+    * `n`: Size of the polyhex
+    * `p`: Percolation factor in [0, 1)
+"""
+function Polyhex(n::Int64, p::Float64)
+    Poly(n, p, [1. -1/2; 0. sqrt(3)/2], [(1, 0), (0, -1), (-1, -1), (-1, 0), (0, 1), (1, 1)])
+end
+
+
+"""
+    boundingBox(tiles)
+
+Calculate the smallest d-dimensional bounding box enclosing the polyform and return it as (min, max) pair for each dimension.
+
+# Arguments
+    * `tiles`: Lattice points in polyform
 """
 function boundingBox(tiles::Set{NTuple{d, Int64}})
     # Initialize vectors for min and max with extreme values
@@ -30,15 +125,18 @@ function boundingBox(tiles::Set{NTuple{d, Int64}})
     return [(minVec[i] => maxVec[i]) for i in 1:d]
 end
 
-function boundingBox(p::Poly)
-    boundingBox(p.tiles)
-end
-
 
 """
-Plot 2D polyforms
+    prettyPrint(tiles, basis, p)
+
+Represent 2-dimensional polyform with a scatter plot.
+
+# Arguments
+    * `tiles`: Lattice points in polyform
+    * `basis`: Lattice basis of the polyform
+    * `path`: Output path
 """
-function prettyPrint(tiles::Set{NTuple{d, Int64}}, basis::Matrix{Float64}, p::Float64)
+function prettyPrint(tiles::Set{NTuple{d, Int64}}, basis::Matrix{Float64}, path::String)
     @assert d == 2 "Only 2D-Plotting is supported"
 
     # Transform tile coordinates using lattice basis
@@ -51,11 +149,22 @@ function prettyPrint(tiles::Set{NTuple{d, Int64}}, basis::Matrix{Float64}, p::Fl
     # Create the plot
     pl = scatter(xCoords, yCoords, title="Polyform", legend=false, xlabel="", ylabel="", aspect_ratio=:equal)
 
-    savefig(pl, "plots/$p-$(Dates.format(now(), "HH-MM-SS-MS"))-plot.png")
+    savefig(pl, path)
 end
 
 
-function prettyPrint(tiles::Set{NTuple{d, Int64}}, perimeter::Set{NTuple{d, Int64}}, basis::Matrix{Float64}, p::Float64)
+"""
+    prettyPrint(tiles, basis, p)
+
+Represent 2-dimensional polyform (blue) and its side perimeter (red) with a scatter plot.
+
+# Arguments
+    * `tiles`: Lattice points in polyform
+    * `perimeter`: Lattice points in side perimeter
+    * `basis`: Lattice basis of the polyform
+    * `path`: Output path
+"""
+function prettyPrint(tiles::Set{NTuple{d, Int64}}, perimeter::Set{NTuple{d, Int64}}, basis::Matrix{Float64}, path::String)
     @assert d == 2 "Only 2D-Plotting is supported"
 
     # Transform tile coordinates using lattice basis
@@ -67,23 +176,31 @@ function prettyPrint(tiles::Set{NTuple{d, Int64}}, perimeter::Set{NTuple{d, Int6
     yCoordsTiles = [c[2] for c in tileCoords]
 
     # Extract transformed x and y coordinates for perimeter
-    xCoordsAdjacent = [c[1] for c in perimeterCoords]
-    yCoordsAdjacent = [c[2] for c in perimeterCoords]
+    xCoordsPeri = [c[1] for c in perimeterCoords]
+    yCoordsPeri = [c[2] for c in perimeterCoords]
 
     # Create the plot with tiles in blue and perimeter in red
     pl = scatter(xCoordsTiles, yCoordsTiles, color=:blue, label="Tiles", marker=:circle, aspect_ratio=:equal)
-    scatter!(pl, xCoordsAdjacent, yCoordsAdjacent, color=:red, label="Perimeter", marker=:square)
+    scatter!(pl, xCoordsPeri, yCoordsPeri, color=:red, label="Perimeter", marker=:square)
 
     title!(pl, "Polyform")
     xlabel!(pl, "")
     ylabel!(pl, "")
 
-    savefig(pl, "plots/$p-$(Dates.format(now(), "HH-MM-SS-MS"))-plot-perimeter.png")
+    savefig(pl, path)
 end
 
 
 """
-Breath-First Search to check connectivity
+    bfs(tiles, start, finish, neighbours)
+
+Determine if a path in the polyform exists connecting the lattice point start and the lattice point end using Breath-First Search.
+
+# Arguments
+    * `tiles`: Lattice points in polyform
+    * `start`: Starting point of search
+    * `finish`: Ending point of search
+    * `neighbours`: List of difference to the respective neighbouring tiles for the current polyform 
 """
 @inline function bfs(tiles::Set{NTuple{d, Int64}}, start::NTuple{d, Int64}, finish::NTuple{d, Int64}, neighbours::Vector{NTuple{d, Int64}})
     q = Queue{NTuple{d, Int64}}()
@@ -97,12 +214,12 @@ Breath-First Search to check connectivity
             return true
         end
 
-        for neighbour in neighbours
-            neighbourTile = tile .+ neighbour
+        for n in neighbours
+            nTile = tile .+ n
 
-            if (neighbourTile in tiles) && !(neighbourTile in done)
-                enqueue!(q, neighbourTile)
-                push!(done, neighbourTile)
+            if (nTile in tiles) && !(nTile in done)
+                enqueue!(q, nTile)
+                push!(done, nTile)
             end
         end
     end
@@ -111,10 +228,25 @@ Breath-First Search to check connectivity
 end
 
 
+"""
+    shuffle(tiles, perimeter, p, neighbours)
+
+Execute one Markov step of the Metropolis algorithm:
+1) Uniformly at random, select a tile, x, in the polyform A
+2) Uniformly at random, select a tile, y, on the site perimeter of A \\setminus {x}
+3) If B = (A \\setminus {x}) U {y} is a still connected, then accept it as the next polyform with probability min(1, (1-p)^(t_B-t_A)), where
+   t_A and t_B are the site perimeters of A and B, respectively. Otherwise, keep the current polyform A.
+
+# Arguments
+    * `tiles`: Lattice points in polyform
+    * `perimeter`: Lattice points in side perimeter
+    * `p`: Percolation factor in [0, 1)
+    * `neighbours`: List of difference to the respective neighbouring tiles for the current polyform 
+"""
 @inline function shuffle(tiles::Set{NTuple{d, Int64}}, perimeter::Set{NTuple{d, Int64}}, p::Float64, neighbours::Vector{NTuple{d, Int64}})
     tA = length(perimeter)
 
-    # Step 1: Uniformly at random, select a cell, x, in A
+    # Step 1: Uniformly at random, select a tile, x, in the polyform A
 
     x = rand(tiles)
     delete!(tiles, x)
@@ -134,7 +266,7 @@ end
         delete!(perimeter, tile)
     end
 
-    # Step 2: Uniformly at random, select a site, y, on the site perimeter of A \ {x}
+    # Step 2: Uniformly at random, select a tile, y, on the site perimeter of A \ {x}
 
     y = rand(perimeter)
     delete!(perimeter, y)
@@ -209,7 +341,14 @@ end
 
 
 """
-Calculate number of holes using BFS on all tiles not in the polyform
+    holes(tiles, neighbours)
+
+Count the number of d-dimensional holes of the polyform. This is done by determining the number of connected components of the complement, so
+all lattice points not in the polyform.
+
+# Arguments
+    * `tiles`: Lattice points in polyform
+    * `neighbours`: List of difference to the respective neighbouring tiles for the current polyform 
 """
 function holes(tiles::Set{NTuple{d, Int64}}, neighbours::Vector{NTuple{d, Int64}})
     bounds = boundingBox(tiles)
@@ -259,146 +398,4 @@ function holes(tiles::Set{NTuple{d, Int64}}, neighbours::Vector{NTuple{d, Int64}
     return numberOfHoles
 end
 
-
-"""
-Generate polyform. Neighbours should be sorted such that they are circular to improve performance of connectivity check
-"""
-function Poly(n::Int64, p::Float64, basis::Matrix{Float64}, neighbours::Vector{NTuple{d, Int64}})
-    # Initialize tiles as line
-    tiles = Set{NTuple{d, Int64}}()
-    for i in 0 : n - 1
-        push!(tiles, Tuple(fill(0, d)) .+ i .* neighbours[1])
-    end
-
-    # Determine initial perimeter
-    perimeter = Set{NTuple{d, Int64}}()
-    for tile in tiles
-        for neighbour in neighbours
-            neighbour_tile = tile .+ neighbour
-            if !(neighbour_tile in tiles)
-                push!(perimeter, neighbour_tile)
-            end
-        end
-    end
-
-    holeData = Vector{Int64}()
-
-    @showprogress 1 "Shuffling..." for i in 1 : floor(Int, 20 * n^2)
-        while !shuffle(tiles, perimeter, p, neighbours)
-            # Keep trying shuffle until it succeeds
-        end
-
-        #if i % n == 0
-        #    currentHoles = holes(tiles, neighbours)
-        #    push!(holeData, currentHoles)
-        #end
-    end
-
-    doPlot = false
-
-    if doPlot
-        scatter((Vector(1:length(holeData)) .* n^2), holeData, title="Development of Holes Over Time", xlabel="Iterations", legend=false)
-        savefig("plots/$p-$(Dates.format(now(), "HH-MM-SS-MS"))-holes.png")
-
-        prettyPrint(tiles, basis, p)
-        #prettyPrint(tiles, perimeter, basis, p)
-
-        open("plots/$p-$(Dates.format(now(), "HH-MM-SS-MS"))-data.txt", "w") do file
-            write(file, repr(Poly(tiles, perimeter, holes(tiles, neighbours))))
-        end
-    end
-
-    Poly(tiles, perimeter, holes(tiles, neighbours))
-end
-
-
-function Polyomino(n::Int64, p::Float64)
-    Poly(n, p, [1. 0.; 0. 1.], [(1, 0), (0, -1), (-1, 0), (0, 1)])
-end
-
-function Polyhex(n::Int64, p::Float64)
-    Poly(n, p, [1. -1/2; 0. sqrt(3)/2], [(1, 0), (0, -1), (-1, -1), (-1, 0), (0, 1), (1, 1)])
-end
-
-function avgPeriSq(p, n, r)
-    println(p)
-
-    avg = 0.
-    for _ in 1 : r
-        poly = Polyomino(n, p)
-        avg += length(poly.perimeter) / n
-    end
-    
-    return avg / r
-end
-
-function avgHolesSq(p, n, r)
-    println(p)
-
-    avg = 0.
-    for _ in 1 : r
-        poly = Polyomino(n, p)
-        avg += poly.holes / n
-    end
-    
-    return avg / r
-end
-
-function avgHolesHex(p, n, r)
-    println(p)
-
-    avg = 0.
-    for _ in 1 : r
-        poly = Polyhex(n, p)
-        avg += poly.holes /n
-    end
-    
-    return avg / r
-end
-
-
-function plotHolesSq(n)
-    r = 30  # number of runs
-
-    x = 0.3 : 0.03 : 0.9
-    y = [avgHolesSq(p, n, r) for p in x]
-
-    plot(x, y, title="Polyomino n = $n", xlabel="p", ylabel="Holes", linewidth=2, marker=:circle, legend=false)
-    savefig("sq-$n.png")
-end
-
-
-function plotHolesHex(n)
-    r = 30  # number of runs
-
-    x = 0.3 : 0.03 : 0.9
-    y = [avgHolesHex(p, n, r) for p in x]
-
-    plot(x, y, title="Polyhex n = $n", xlabel="p", ylabel="Holes", linewidth=2, marker=:circle, legend=false)
-    savefig("hex-$n.png")
-end
-
-
-function plotPeriSq(n)
-    r = 20  # number of runs
-
-    x = 0.0 : 0.1 : 0.9
-    y = [avgPeriSq(p, n, r) for p in x]
-    println(y)
-
-    plot(x, y, title="Polyomino n = $n", xlabel="p", ylabel="Holes", linewidth=2, marker=:circle, legend=false)
-    savefig("peri-$n.png")
-end
-
-
-if length(ARGS) == 1
-    while true
-        #Polyhex(1000, parse(Float64, ARGS[1]))
-        #Polyomino(1000, parse(Float64, ARGS[1]))
-    end
-end
-
-plotPeriSq(100)
-
-#plotHolesSq(400)
-# plotHolesHex(400)
+# (c) Mia Muessig
