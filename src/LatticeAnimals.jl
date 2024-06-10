@@ -150,7 +150,7 @@ end
 
 
 """
-    polyPlot(tiles, basis, p)
+    polyPlot(tiles, basis, path)
 
 Represent 2-dimensional polyform with a scatter plot.
 
@@ -177,7 +177,7 @@ end
 
 
 """
-    polyPlot(tiles, basis, p)
+    polyPlot(tiles, basis, path)
 
 Represent 2-dimensional polyform (blue) and its side perimeter (red) with a scatter plot.
 
@@ -420,8 +420,5 @@ function holes(tiles::Set{NTuple{d, Int64}}, neighbours::Vector{NTuple{d, Int64}
     numberOfHoles = countComponents(emptyPoints) - 1
     return numberOfHoles
 end
-
-# (c) Mia Muessig
-
 
 end # module LatticeAnimals
