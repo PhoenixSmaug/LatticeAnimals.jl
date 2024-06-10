@@ -1,9 +1,32 @@
+module LatticeAnimals
+
 using Plots
 using DataStructures
-using Dates
 using ProgressMeter
+using Preferences
 
-const d = 2  # number of dimensions
+export setDimension, Poly, Polyomino, Polyhex, polyPlot
+
+
+"""
+    setDimension(d)
+
+Set the number of dimensions for the polyforms as a disk-persistent setting. A rebuilt of the package is necessary afterwards
+
+# Arguments
+    * `d`: Number of dimensions
+"""
+function setDimension(d::Int64)
+    if !(d >= 2)
+        throw(ArgumentError("Invalid dimension: $d"))
+    end
+
+    # Set it in our runtime values, as well as saving it to disk
+    @set_preferences!("dimension" => d)
+    @info("New dimension set; restart your Julia session for this change to take effect!")
+end
+
+const d = @load_preference("dimension", 2)
 
 
 """
@@ -62,8 +85,8 @@ function Poly(n::Int64, p::Float64, basis::Matrix{Float64}, neighbours::Vector{N
     end
 
     if doPlot
-        prettyPrint(tiles, basis, "$p-$(Dates.format(now(), "HH-MM-SS-MS"))-plot.png")
-        #prettyPrint(tiles, perimeter, basis, "$p-$(Dates.format(now(), "HH-MM-SS-MS"))-plot.png")
+        polyPlot(tiles, basis, "$p-$(Dates.format(now(), "HH-MM-SS-MS"))-plot.png")
+        #polyPlot(tiles, perimeter, basis, "$p-$(Dates.format(now(), "HH-MM-SS-MS"))-plot.png")
     end
 
     Poly(tiles, perimeter, holes(tiles, neighbours))
@@ -127,7 +150,7 @@ end
 
 
 """
-    prettyPrint(tiles, basis, p)
+    polyPlot(tiles, basis, p)
 
 Represent 2-dimensional polyform with a scatter plot.
 
@@ -136,7 +159,7 @@ Represent 2-dimensional polyform with a scatter plot.
     * `basis`: Lattice basis of the polyform
     * `path`: Output path
 """
-function prettyPrint(tiles::Set{NTuple{d, Int64}}, basis::Matrix{Float64}, path::String)
+function polyPlot(tiles::Set{NTuple{d, Int64}}, basis::Matrix{Float64}, path::String)
     @assert d == 2 "Only 2D-Plotting is supported"
 
     # Transform tile coordinates using lattice basis
@@ -154,7 +177,7 @@ end
 
 
 """
-    prettyPrint(tiles, basis, p)
+    polyPlot(tiles, basis, p)
 
 Represent 2-dimensional polyform (blue) and its side perimeter (red) with a scatter plot.
 
@@ -164,7 +187,7 @@ Represent 2-dimensional polyform (blue) and its side perimeter (red) with a scat
     * `basis`: Lattice basis of the polyform
     * `path`: Output path
 """
-function prettyPrint(tiles::Set{NTuple{d, Int64}}, perimeter::Set{NTuple{d, Int64}}, basis::Matrix{Float64}, path::String)
+function polyPlot(tiles::Set{NTuple{d, Int64}}, perimeter::Set{NTuple{d, Int64}}, basis::Matrix{Float64}, path::String)
     @assert d == 2 "Only 2D-Plotting is supported"
 
     # Transform tile coordinates using lattice basis
@@ -399,3 +422,6 @@ function holes(tiles::Set{NTuple{d, Int64}}, neighbours::Vector{NTuple{d, Int64}
 end
 
 # (c) Mia Muessig
+
+
+end # module LatticeAnimals
