@@ -58,9 +58,8 @@ clock-wise to improve performance of the connectivity checks during generation. 
     * `p`: Percolation factor in [0, 1)
     * `basis`: Lattice basis of the polyform
     * `neighbours`: List of difference to the respective neighbouring tiles for the current polyform 
-    * `doPlot`: If a scatter plot visualizing the polyform should be created (only available for 2d-polyforms)
 """
-function Poly(n::Int64, p::Float64, basis::Matrix{Float64}, neighbours::Vector{NTuple{d, Int64}}; doPlot = false)
+function Poly(n::Int64, p::Float64, basis::Matrix{Float64}, neighbours::Vector{NTuple{d, Int64}})
     # Initialize tiles as line
     tiles = Set{NTuple{d, Int64}}()
     for i in 0 : n - 1
@@ -82,11 +81,6 @@ function Poly(n::Int64, p::Float64, basis::Matrix{Float64}, neighbours::Vector{N
         while !shuffle(tiles, perimeter, p, neighbours)
             # Keep trying shuffle until it succeeds
         end
-    end
-
-    if doPlot
-        polyPlot(tiles, basis, "$p-$(Dates.format(now(), "HH-MM-SS-MS"))-plot.png")
-        #polyPlot(tiles, perimeter, basis, "$p-$(Dates.format(now(), "HH-MM-SS-MS"))-plot.png")
     end
 
     Poly(tiles, perimeter, holes(tiles, neighbours))
